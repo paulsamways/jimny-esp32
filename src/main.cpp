@@ -9,6 +9,9 @@ void setup() {
   pinMode(PIN_OUTPUT_B, OUTPUT);
   pinMode(PIN_INPUT, INPUT_PULLDOWN);
 
+  digitalWrite(PIN_OUTPUT_A, LOW);
+  digitalWrite(PIN_OUTPUT_B, LOW);
+
   Serial.begin(9600);
 }
 
@@ -18,11 +21,17 @@ bool b2_enabled = false;
 int b2 = 0;
 
 int input_high_count = 0;
+unsigned long read_input_after = 0;
 int input_previous = LOW;
+
+unsigned long write_high_after = 0;
+unsigned long write_low_after = millis();
 
 void loop() {
 
-  if (!b2_enabled)
+  unsigned long current_millis = millis();
+
+  if (current_millis >= read_input_after && !b2_enabled)
   {
     int input_current = digitalRead(PIN_INPUT);
 
@@ -41,40 +50,49 @@ void loop() {
         input_high_count = 0;
       }
     }
+    read_input_after = current_millis + 10;
   }
 
-  if (b1 < 36)
+  if (write_high_after > 0 && current_millis >= write_high_after)
   {
-    digitalWrite(PIN_OUTPUT_A, HIGH);
-    Serial.print(".");
-  }
-  else
-  {
-    Serial.print(" ");
-  }
-
-  b1 = b1 < 39 ? b1 + 1 : 0;
-
-  if (b2_enabled)
-  {
-    digitalWrite(PIN_OUTPUT_B, HIGH);
-
-    if (b2 < 12)
+    if (b1 < 36)
     {
-      b2++;
-      Serial.print("-");
+      digitalWrite(PIN_OUTPUT_A, HIGH);
+      Serial.print(".");
     }
     else
     {
-      b2_enabled = false;
-      b2 = 0;
+      Serial.print(" ");
     }
+
+    b1 = b1 < 39 ? b1 + 1 : 0;
+
+    if (b2_enabled)
+    {
+      digitalWrite(PIN_OUTPUT_B, HIGH);
+
+      if (b2 < 12)
+      {
+        b2++;
+        Serial.print("-");
+      }
+      else
+      {
+        b2_enabled = false;
+        b2 = 0;
+      }
+    }
+
+    write_high_after = 0;
+    write_low_after = current_millis + 50;
   }
   
-  delay(50);
-  digitalWrite(PIN_OUTPUT_A, LOW);
-  digitalWrite(PIN_OUTPUT_B, LOW);
-  
+  if (write_low_after > 0 && current_millis >= write_low_after)
+  {
+    digitalWrite(PIN_OUTPUT_A, LOW);
+    digitalWrite(PIN_OUTPUT_B, LOW);
 
-  delay(100);
+    write_low_after = 0;
+    write_high_after = current_millis + 100; // Set next high after 1 second
+  }
 }
