@@ -1,98 +1,96 @@
 #include <Arduino.h>
 
-#define PIN_OUTPUT_A LED_BUILTIN
-#define PIN_OUTPUT_B D2
-#define PIN_INPUT D3
+#define PIN_OUTPUT_CRANK_ANGLE D2  // Change to your actual GPIO
+#define PIN_OUTPUT_CAM_ANGLE D3    // Change to your actual GPIO
+#define PIN_INPUT_INJECTOR_PULSE D4 // Change to your actual GPIO
+
+const int SIGNAL_STOPPED = -1;
+
+volatile unsigned long lastPulseTime = 0;
+volatile unsigned long pulsePeriod = 0;
+volatile unsigned long pulseCount = 0;
+
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+void IRAM_ATTR injectorPulseISR();
+
+const int CRANK_PULSE_POSITIONS[36] = {
+  HIGH,
+  LOW, LOW,
+  HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH,
+  LOW, HIGH, LOW,
+  HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH,
+  LOW, LOW
+};
+
+const int CAM_PULSE_POSITIONS[36] = {
+  LOW, LOW, LOW, LOW, LOW, HIGH, LOW, LOW, LOW, LOW, LOW, LOW,
+  LOW, LOW, LOW, LOW, LOW, HIGH, LOW, LOW, LOW, LOW, LOW, LOW,
+  LOW, LOW, LOW, LOW, LOW, HIGH, LOW, LOW, LOW, LOW, LOW, LOW
+};
 
 void setup() {
-  pinMode(PIN_OUTPUT_A, OUTPUT);
-  pinMode(PIN_OUTPUT_B, OUTPUT);
-  pinMode(PIN_INPUT, INPUT_PULLDOWN);
+  Serial.begin(115200);
 
-  digitalWrite(PIN_OUTPUT_A, LOW);
-  digitalWrite(PIN_OUTPUT_B, LOW);
+  pinMode(PIN_INPUT_INJECTOR_PULSE, INPUT);
+  pinMode(PIN_OUTPUT_CRANK_ANGLE, OUTPUT);
+  pinMode(PIN_OUTPUT_CAM_ANGLE, OUTPUT);
 
-  Serial.begin(9600);
+  digitalWrite(PIN_OUTPUT_CRANK_ANGLE, LOW);
+  digitalWrite(PIN_OUTPUT_CAM_ANGLE, LOW);
+
+  attachInterrupt(digitalPinToInterrupt(PIN_INPUT_INJECTOR_PULSE), injectorPulseISR, CHANGE);
 }
 
-int b1 = 0;
-
-bool b2_enabled = false;
-int b2 = 0;
-
-int input_high_count = 0;
-unsigned long read_input_after = 0;
-int input_previous = LOW;
-
-unsigned long write_high_after = 0;
-unsigned long write_low_after = millis();
-
 void loop() {
+  static long injectorLastPeriod = 0;
+  static ulong injectorLastPulseCount = 0;
 
-  unsigned long current_millis = millis();
+  portENTER_CRITICAL(&timerMux);
+  unsigned long injectorPeriod = pulsePeriod;
+  unsigned long injectorPulseCount = pulseCount;
+  portEXIT_CRITICAL(&timerMux);
 
-  if (current_millis >= read_input_after && !b2_enabled)
-  {
-    int input_current = digitalRead(PIN_INPUT);
+  static long signalPeriod = 0;
+  static ulong signalLastHigh = 0;
+  static int signalPosition = SIGNAL_STOPPED;
 
-    if (input_current != input_previous)
-    {
-      input_previous = input_current;
-      if (input_current == HIGH)
-      {
-        input_high_count++;
-      }
-
-      if (input_high_count >= 4)
-      {
-        b2_enabled = true;
-        b2 = 0;
-        input_high_count = 0;
-      }
-    }
-    read_input_after = current_millis + 10;
+  if (injectorPeriod != injectorLastPeriod) {
+    injectorLastPeriod = injectorPeriod;
+    signalPeriod = (injectorPeriod * 2) / 36;
   }
 
-  if (write_high_after > 0 && current_millis >= write_high_after)
-  {
-    if (b1 < 36)
-    {
-      digitalWrite(PIN_OUTPUT_A, HIGH);
-      Serial.print(".");
-    }
-    else
-    {
-      Serial.print(" ");
-    }
-
-    b1 = b1 < 39 ? b1 + 1 : 0;
-
-    if (b2_enabled)
-    {
-      digitalWrite(PIN_OUTPUT_B, HIGH);
-
-      if (b2 < 12)
-      {
-        b2++;
-        Serial.print("-");
-      }
-      else
-      {
-        b2_enabled = false;
-        b2 = 0;
-      }
-    }
-
-    write_high_after = 0;
-    write_low_after = current_millis + 50;
+  if (injectorPulseCount != injectorLastPulseCount && injectorPulseCount % 2 == 0) {
+    signalPosition = 0;
+    injectorLastPulseCount = injectorPulseCount;
   }
-  
-  if (write_low_after > 0 && current_millis >= write_low_after)
-  {
-    digitalWrite(PIN_OUTPUT_A, LOW);
-    digitalWrite(PIN_OUTPUT_B, LOW);
 
-    write_low_after = 0;
-    write_high_after = current_millis + 100; // Set next high after 1 second
+  ulong now = micros();
+
+  if (signalPosition > SIGNAL_STOPPED && now - signalLastHigh >= signalPeriod) {
+    digitalWrite(PIN_OUTPUT_CRANK_ANGLE, CRANK_PULSE_POSITIONS[signalPosition]);
+    digitalWrite(PIN_OUTPUT_CAM_ANGLE, CAM_PULSE_POSITIONS[signalPosition]);
+
+    delayMicroseconds(signalPeriod / 4);
+
+    digitalWrite(PIN_OUTPUT_CRANK_ANGLE, LOW);
+    digitalWrite(PIN_OUTPUT_CAM_ANGLE, LOW);
+
+    signalLastHigh = now;
+    signalPosition = signalPosition < 35 ? signalPosition + 1 : SIGNAL_STOPPED; // Reset after 36 counts
   }
+}
+
+void IRAM_ATTR injectorPulseISR() {
+  static bool lastState = LOW;
+  bool state = digitalRead(PIN_INPUT_INJECTOR_PULSE);
+  if (state == HIGH && lastState == LOW) { // Rising edge
+    unsigned long now = micros();
+    if (lastPulseTime != 0) {
+      pulsePeriod = now - lastPulseTime;
+      pulseCount++;
+    }
+    lastPulseTime = now;
+  }
+  lastState = state;
 }
