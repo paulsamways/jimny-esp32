@@ -4,7 +4,7 @@
 #define PIN_OUTPUT_CAM_ANGLE D3    // Change to your actual GPIO
 #define PIN_INPUT_INJECTOR_PULSE D4 // Change to your actual GPIO
 
-const uint8_t SIGNAL_STOPPED = -1;
+const int SIGNAL_STOPPED = -1;
 
 volatile unsigned long lastPulseTime = 0;
 volatile unsigned long pulsePeriod = 0;
@@ -15,28 +15,28 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 void IRAM_ATTR injectorPulseISR();
 
 const uint8_t CRANK_PULSE_POSITIONS[72] = {
-  HIGH, LOW
-  LOW, LOW, LOW, LOW
+  HIGH, LOW,
+  LOW, LOW, LOW, LOW,
   HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW,
-  LOW, LOW, LOW, LOW
+  LOW, LOW, LOW, LOW,
   HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW, HIGH, LOW,
   LOW, LOW, LOW, LOW
 };
 
 const uint8_t CAM_PULSE_POSITIONS[144] = {
   HIGH, LOW,
-  LOW, LOW, LOW, LOW 
+  LOW, LOW, LOW, LOW,
   LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, HIGH, HIGH, LOW,
-  LOW, LOW, LOW, LOW
+  LOW, LOW, LOW, LOW,
   HIGH, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, 
   LOW, LOW, LOW, HIGH,
 
   HIGH, LOW,
-  LOW, LOW, LOW, LOW 
+  LOW, LOW, LOW, LOW,
   LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW,
-  HIGH, HIGH, LOW, LOW
-  LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, 
-  HIGH, HIGH, LOW, LOW
+  LOW, HIGH, HIGH, LOW,
+  LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, HIGH, 
+  HIGH, LOW, LOW, LOW
 };
 
 void setup() {
@@ -71,6 +71,12 @@ void loop() {
   if (injectorPeriod != injectorLastPeriod) {
     injectorLastPeriod = injectorPeriod;
 
+    if (injectorPeriod > 0) {
+      ulong rpms = (60 * 1000000) / (injectorPeriod * 2);
+      Serial.print(rpms);
+      Serial.println("RPM");
+    }
+
     signalPeriod = (injectorPeriod * 2) / 72;
   }
 
@@ -89,12 +95,12 @@ void loop() {
   if (now - signalLastSet >= signalPeriod) {
     if (crankSignalPosition > SIGNAL_STOPPED) {
       digitalWrite(PIN_OUTPUT_CRANK_ANGLE, CRANK_PULSE_POSITIONS[crankSignalPosition]);
-      crankSignalPosition = crankSignalPosition < 35 ? crankSignalPosition + 1 : SIGNAL_STOPPED; // Reset after 36 counts
+      crankSignalPosition = crankSignalPosition < 71 ? crankSignalPosition + 1 : SIGNAL_STOPPED; // Reset after 36 counts
     }
 
     if (camSignalPosition > SIGNAL_STOPPED) {
       digitalWrite(PIN_OUTPUT_CAM_ANGLE, CAM_PULSE_POSITIONS[camSignalPosition]);
-      camSignalPosition = camSignalPosition < 71 ? camSignalPosition + 1 : SIGNAL_STOPPED; // Reset after 72 counts
+      camSignalPosition = camSignalPosition < 143 ? camSignalPosition + 1 : SIGNAL_STOPPED; // Reset after 72 counts
     }
 
     signalLastSet = now;
